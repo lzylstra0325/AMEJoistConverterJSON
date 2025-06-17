@@ -2,16 +2,36 @@ import json
 import hashlib
 import re
 
-def get_joist_type(name):
-    match = re.match(r"([0-9]+K)", name)
+def get_joist_type(designation):
+    """
+    Extract joist type prefix (e.g., '30K', '40LH', '44DLH').
+    Only allows K, LH, and DLH series.
+    """
+    match = re.match(r"([0-9]+(?:K|LH|DLH))", designation)
     return match.group(1) if match else "UNKNOWN"
 
-def hash_line(line):
-    """Generate a hash from line geometry to prevent duplicates."""
-    s, e = line.get("Start", {}), line.get("End", {})
-    return hashlib.md5(f"{s.get('x')},{s.get('y')},{s.get('z')}|{e.get('x')},{e.get('y')},{e.get('z')}".encode()).hexdigest()
+def to_xyz_dict(point):
+    """
+    Convert capitalized X/Y/Z dict to lowercase x/y/z.
+    """
+    return {
+        "x": point.get("X", 0),
+        "y": point.get("Y", 0),
+        "z": point.get("Z", 0)
+    }
+
+def hash_line(start, end):
+    """
+    Generate a hash from start and end points to avoid duplicates.
+    """
+    return hashlib.md5(
+        f"{start['X']},{start['Y']},{start['Z']}|{end['X']},{end['Y']},{end['Z']}".encode()
+    ).hexdigest()
 
 def convert_amejoists_to_grasshopper(input_path, output_path):
+    """
+    Converts a Hypar-style model JSON to Grasshopper-friendly joist data.
+    """
     with open(input_path, 'r') as f:
         model = json.load(f)
 
@@ -24,23 +44,28 @@ def convert_amejoists_to_grasshopper(input_path, output_path):
         if element.get("discriminator") != "Elements.AMEJoist":
             continue
 
-        name = element.get("Name", "")
-        line = element.get("TopOfSteelSlopeLine", {})
-        start = line.get("Start")
-        end = line.get("End")
+        designation = element.get("JoistDesignation", "")
+        top_line = element.get("TopOfSteelSlopeLine", {})
+        start = top_line.get("Start")
+        end = top_line.get("End")
 
-        if not (name and start and end):
+        if not (designation and start and end):
             continue
 
-        line_hash = hash_line(line)
+        jt = get_joist_type(designation)
+        if jt == "UNKNOWN":
+            continue
+
+        line_hash = hash_line(start, end)
         if line_hash in seen_hashes:
-            continue  # skip duplicates
+            continue
         seen_hashes.add(line_hash)
 
-        joist_types.append(get_joist_type(name))
-        start_pts.append(start)
-        end_pts.append(end)
+        joist_types.append(jt)
+        start_pts.append(to_xyz_dict(start))
+        end_pts.append(to_xyz_dict(end))
 
+    # Final Grasshopper-friendly format
     gh_data = {
         "joist_types": joist_types,
         "start_pts": start_pts,
@@ -49,6 +74,8 @@ def convert_amejoists_to_grasshopper(input_path, output_path):
 
     with open(output_path, 'w') as f_out:
         json.dump(gh_data, f_out, indent=2)
+
+    print(f"✅ Wrote {len(joist_types)} joists to {output_path}")
 
 convert_amejoists_to_grasshopper(
     input_path="model_chatgpt_minified.json",
