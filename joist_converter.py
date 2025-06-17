@@ -78,6 +78,6 @@ def convert_amejoists_to_grasshopper(input_path, output_path):
     print(f"✅ Wrote {len(joist_types)} joists to {output_path}")
 
 convert_amejoists_to_grasshopper(
-    input_path="model_chatgpt_minified.json",
+    input_path="model.json",
     output_path="joists_for_grasshopper.json"
 )
